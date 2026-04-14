@@ -74,11 +74,11 @@ Trust your instincts. If something feels off, flag it — even if you can't imme
 
 ### Reviewer B — Codex (via CLI)
 
-Run Codex non-interactively, piping the staged diff in as context:
+Run Codex non-interactively using its built-in review subcommand:
 
 ```bash
-git diff --cached | codex exec --ephemeral \
-  "You are reviewing a code diff before it is committed. Intent: <intent from Step 2>. \
+codex exec review --ephemeral --uncommitted \
+  "Intent: <intent from Step 2>. \
   <include CLAUDE.md contents if present> \
   List every issue you find — correctness, logic, safety, security, edge cases, and CLAUDE.md compliance. \
   For each issue state: severity (BLOCKER/WARNING/NOTE), file and line number, and a concise explanation. \
@@ -106,22 +106,22 @@ Wait for both subagents to complete, then merge their results. Apply your own ju
 ```
 ISSUES FOUND
 
-🔴 BLOCKER [both] — src/api/handler.ts:42
+#1 🔴 BLOCKER [both] — src/api/handler.ts:42
    `user.profile` can be undefined here if auth middleware didn't run.
    Accessing `.name` will throw.
 
-🟡 WARNING [claude] — src/utils/parse.ts:17
+#2 🟡 WARNING [claude] — src/utils/parse.ts:17
    Empty string input returns NaN silently. Caller doesn't check.
 
-🟡 WARNING [codex, pre-existing] — src/auth/token.ts:91
+#3 🟡 WARNING [codex, pre-existing] — src/auth/token.ts:91
    Token expiry never checked. Predates this change but worth fixing.
 
-⚠️  DISAGREEMENT — src/index.ts:3
+#4 ⚠️  DISAGREEMENT — src/index.ts:3
    Codex: WARNING — unused import `lodash`.
    Claude: not flagged.
 
 ---
-VERDICT: ❌ NOT READY — 1 blocker to resolve.
+VERDICT: ❌ NOT READY — #1 is a blocker.
 ```
 
 **If no issues found:**
