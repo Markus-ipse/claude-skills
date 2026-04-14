@@ -77,7 +77,7 @@ Trust your instincts. If something feels off, flag it — even if you can't imme
 Run Codex non-interactively using its built-in review subcommand:
 
 ```bash
-codex exec review --ephemeral --uncommitted \
+codex review --uncommitted \
   "Intent: <intent from Step 2>. \
   <include CLAUDE.md contents if present> \
   List every issue you find — correctness, logic, safety, security, edge cases, and CLAUDE.md compliance. \
