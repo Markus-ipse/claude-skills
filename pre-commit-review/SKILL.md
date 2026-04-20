@@ -138,7 +138,7 @@ Tag any issues from this pass `[pr-scope]` in the merged report.
 
 ## Step 4: Merge and output
 
-Wait for all reviewers to complete, then merge their results. Apply your own judgment when merging — don't just concatenate blindly. Group issues by dimension (correctness, bugs, security, performance, tests, code quality) so the report mirrors what the GH PR-review Action would say.
+Wait for all reviewers to complete, then merge their results. Apply your own judgment when merging — don't just concatenate blindly. Group issues by **severity** (BLOCKER → WARNING → NOTE → DISAGREEMENT) so the most important issues are read first. Within each severity group, order by impact.
 
 **Tagging:**
 - `[both]` — both Reviewer A (Claude) and Reviewer B (Codex) flagged the same issue (high confidence)
@@ -149,23 +149,26 @@ Wait for all reviewers to complete, then merge their results. Apply your own jud
 
 **Disagreements:** If one reviewer flags something as a BLOCKER and the other doesn't mention it, call that out explicitly. Don't resolve disagreements yourself — surface them so the human can judge.
 
-**If issues found:**
+**If issues found:** Group by severity. Show each section header only if it has entries.
+
 ```
 ISSUES FOUND
 
-#1 🔴 BLOCKER [both] — src/api/handler.ts:42
-   `user.profile` can be undefined here if auth middleware didn't run.
-   Accessing `.name` will throw.
+🔴 BLOCKERS
+  #1 [both] — src/api/handler.ts:42
+     `user.profile` can be undefined here if auth middleware didn't run.
+     Accessing `.name` will throw.
 
-#2 🟡 WARNING [claude] — src/utils/parse.ts:17
-   Empty string input returns NaN silently. Caller doesn't check.
+🟡 WARNINGS
+  #2 [claude] — src/utils/parse.ts:17
+     Empty string input returns NaN silently. Caller doesn't check.
+  #3 [codex, pre-existing] — src/auth/token.ts:91
+     Token expiry never checked. Predates this change but worth fixing.
 
-#3 🟡 WARNING [codex, pre-existing] — src/auth/token.ts:91
-   Token expiry never checked. Predates this change but worth fixing.
-
-#4 ⚠️  DISAGREEMENT — src/index.ts:3
-   Codex: WARNING — unused import `lodash`.
-   Claude: not flagged.
+⚠️  DISAGREEMENTS
+  #4 — src/index.ts:3
+     Codex: WARNING — unused import `lodash`.
+     Claude: not flagged.
 
 ---
 VERDICT: ❌ NOT READY — #1 is a blocker.
