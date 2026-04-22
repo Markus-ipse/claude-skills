@@ -73,13 +73,13 @@ git diff --cached --name-only | xargs -I{} dirname {} | sort -u | while read dir
 done                                             # directory-level conventions
 ```
 
-Pass the contents of any found CLAUDE.md files to both reviewers. If no CLAUDE.md exists, proceed without.
+Pass the contents of any found CLAUDE.md files to Reviewer A. Codex's `review` subcommand doesn't accept a custom prompt alongside its scope flags (`--uncommitted`, `--base`), so Reviewers B and C rely on Codex's built-in review logic — they don't receive the intent statement or CLAUDE.md contents.
 
 ---
 
 ## Step 3: Run reviewers in parallel
 
-Spawn the reviewers simultaneously using the Task tool — don't wait for one to finish before starting the next. Reviewers A and B always run. Reviewer C runs only if Step 1b said the PR-level diff is larger than the staged diff. All reviewers receive the intent statement from Step 2 and the contents of any CLAUDE.md files found.
+Spawn the reviewers simultaneously using the Task tool — don't wait for one to finish before starting the next. Reviewers A and B always run. Reviewer C runs only if Step 1b said the PR-level diff is larger than the staged diff. Reviewer A receives the intent statement from Step 2 and any CLAUDE.md contents; Reviewers B and C use Codex's built-in review logic (scope flags preclude a custom prompt).
 
 Reviewers A and B must explicitly cover all six dimensions below — in this order. The GH PR-review Action checks the same list, so anything missed here will resurface there. (Reviewer C has a narrower brief — see its section.)
 
@@ -100,36 +100,20 @@ If CLAUDE.md files were loaded, check the changes against the conventions they d
 
 ### Reviewer B — Codex (via CLI)
 
-Run Codex non-interactively using its built-in review subcommand:
+Run Codex non-interactively using its built-in review subcommand. `--uncommitted` cannot be combined with a custom `[PROMPT]`, so rely on Codex's built-in review logic (it already covers the six dimensions):
 
 ```bash
-codex review --uncommitted \
-  -c model_reasoning_effort=low \
-  "Intent: <intent from Step 2>. \
-  <include CLAUDE.md contents if present> \
-  Review across all six dimensions: (1) correctness vs intent, (2) bugs & edge cases, \
-  (3) security, (4) performance, (5) test coverage, (6) code quality. \
-  For each issue state: severity (BLOCKER/WARNING/NOTE), file and line number, dimension, \
-  and a concise explanation. If an issue is on a line not modified in this diff, mark it pre-existing. \
-  Focus on real problems, not stylistic preferences. Suggest improvements only when the current code \
-  has a concrete drawback (bug risk, perf cost, security weakness, missing test, or CLAUDE.md violation)."
+codex review --uncommitted -c model_reasoning_effort=low
 ```
 
 If `codex` is not on PATH or exits with an error, return that information so the orchestrator can note it in the report and proceed without this reviewer.
 
 ### Reviewer C — Codex PR-level pass (only if Step 1b found a larger diff)
 
-Skip if Step 1b said to skip. Otherwise run **one** additional Codex review against the base branch to catch issues invisible at single-commit scope. Use `codex review --base` (purpose-built for this) — do not pipe diffs into `codex exec`:
+Skip if Step 1b said to skip. Otherwise run **one** additional Codex review against the base branch to catch issues invisible at single-commit scope. Use `codex review --base` (purpose-built for this) — do not pipe diffs into `codex exec`. `--base` cannot be combined with a custom `[PROMPT]`, so rely on Codex's built-in PR-level logic:
 
 ```bash
-codex review --base "$base_branch" \
-  -c model_reasoning_effort=low \
-  "This review covers the full diff this PR will introduce vs the base branch. \
-  Look ONLY for issues that emerge from the combination of multiple commits: \
-  unused additions, contradictions between commits, dead code added then never wired up, \
-  missing tests for the feature as a whole, broken invariants spanning files, \
-  partially-applied refactors. Skip anything a single-commit review would already see. \
-  For each issue state: severity (BLOCKER/WARNING/NOTE), file and line, and explanation."
+codex review --base "$base_branch" -c model_reasoning_effort=low
 ```
 
 Tag any issues from this pass `[pr-scope]` in the merged report.
