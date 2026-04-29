@@ -25,6 +25,8 @@ git status                 # full picture
 
 If nothing is staged, tell the user and ask whether they want to stage files first or review the working tree diff instead.
 
+The **selected diff** for this review is the staged diff (`git diff --cached`) when anything is staged, or the working-tree diff (`git diff`) when the user opted to review unstaged changes. Later steps refer to "the selected diff" without re-stating the rule.
+
 ---
 
 ## Step 1b: Detect PR-level scope
@@ -79,9 +81,9 @@ Pass the contents of any found CLAUDE.md files to Reviewer A. Codex's `review` s
 
 ## Step 3: Run reviewers in parallel
 
-Spawn the reviewers simultaneously using the Task tool — don't wait for one to finish before starting the next. Reviewers A and B always run. Reviewer C runs only if Step 1b said the PR-level diff is larger than the staged diff. Reviewer A receives the intent statement from Step 2 and any CLAUDE.md contents; Reviewers B and C use Codex's built-in review logic (scope flags preclude a custom prompt).
+Spawn the reviewers simultaneously using the Agent tool — don't wait for one to finish before starting the next. Reviewers A, B, and D always run. Reviewer C runs only if Step 1b said the PR-level diff is larger than the staged diff. Reviewer A receives the intent statement from Step 2 and any CLAUDE.md contents; Reviewers B and C use Codex's built-in review logic (scope flags preclude a custom prompt); Reviewer D gets only the diff and a one-line prompt (deliberately minimal).
 
-Reviewers A and B must explicitly cover all six dimensions below — in this order. The GH PR-review Action checks the same list, so anything missed here will resurface there. (Reviewer C has a narrower brief — see its section.)
+Reviewers A and B must explicitly cover all six dimensions below — in this order. The GH PR-review Action checks the same list, so anything missed here will resurface there. (Reviewer C has narrower scope — PR-level only. Reviewer D has a different framing — open-ended, no checklist. See their sections.)
 
 1. **Correctness** — does the code actually implement the intent from Step 2? A condition can be technically valid but logically inverted; a formula can parse correctly but compute the wrong thing; the right field might be read but the wrong one written. Check semantics, not just syntax.
 2. **Bugs & edge cases** — what inputs, states, or conditions could the code encounter that it doesn't handle? Think adversarially about boundaries, concurrency, error paths, and assumptions the code is silently making.
@@ -118,18 +120,29 @@ codex review --base "$base_branch" -c model_reasoning_effort=low
 
 Tag any issues from this pass `[pr-scope]` in the merged report.
 
+### Reviewer D — Claude sub-agent (senior tech-lead pass)
+
+Spawn a Claude sub-agent via the Agent tool with `subagent_type: "general-purpose"`. The prompt is deliberately minimal — the open-ended framing is what differentiates this reviewer from A.
+
+Construct the prompt by combining the literal sentence `Do a senior tech-lead level code review.` followed by a blank line and the selected diff from Step 1. Wrap the diff in a fence delimiter that cannot appear inside the diff itself. Scan the diff for fence runs as follows: for each line, strip the leading diff prefix (`+`, `-`, or space) before checking, then find the longest run of consecutive backticks at the start of the stripped line and the longest run of consecutive tildes. Pick a fence family (backticks or tildes) and use a fence at least one character longer than the longest run found in that family. If the diff has no fences at all, three backticks or three tildes suffice. No six-dimension checklist, no CLAUDE.md, no intent statement.
+
+If the sub-agent spawn fails (e.g. the `general-purpose` subagent_type isn't registered, or the Agent tool returns an error), include the verbatim error message as a NOTE in the merged report explaining why D didn't run, and continue with the remaining reviewers.
+
+Tag any issues this pass produces `[lead]` in the merged report.
+
 ---
 
 ## Step 4: Merge and output
 
-Wait for all reviewers to complete, then merge their results. Apply your own judgment when merging — don't just concatenate blindly. Group issues by **severity** (BLOCKER → WARNING → NOTE → DISAGREEMENT) so the most important issues are read first. Within each severity group, order by impact.
+Wait for all reviewers to complete, then merge their results. Apply your own judgment when merging — don't just concatenate blindly. Group issues by **severity** (BLOCKER → WARNING → NOTE → DISAGREEMENT) so the most important issues are read first. Within each severity group, order by impact. Severity assignment is the merger's responsibility for all reviewers. Reviewer D outputs no severity hints (no checklist), so default its findings to NOTE, but upgrade to WARNING when the finding describes a likely bug, unsafe practice, or anything touching auth, persistence, or external input — D often phrases security concerns in plain terms without using the word "security". Upgrade to BLOCKER for explicit crash, data-loss, or exploitable-vulnerability descriptions.
 
 **Tagging:**
-- `[both]` — both Reviewer A (Claude) and Reviewer B (Codex) flagged the same issue (high confidence)
+- `[multiple: …]` — flagged by 2+ reviewers (high confidence). Always enumerate which ones inline in alphabetical order, e.g. `[multiple: claude, codex]`, `[multiple: claude, lead]`, `[multiple: claude, codex, lead]`. (Predictable order keeps downstream parsing/grep deterministic.)
 - `[claude]` — only Reviewer A flagged it
 - `[codex]` — only Reviewer B flagged it
-- `[pr-scope]` — flagged by Reviewer C, only visible across the cumulative PR diff
-- `[pre-existing]` — issue is on lines not changed in this diff; flag it anyway, boy scout rule
+- `[lead]` — only Reviewer D flagged it (senior tech-lead pass)
+- `[pr-scope]` — flagged by Reviewer C, only visible across the cumulative PR diff. If Reviewer B already caught the same issue at single-commit scope, prefer `[codex]` alone (de-dupe — `[pr-scope]` is reserved for findings that wouldn't surface without the PR-level pass).
+- `[pre-existing]` — issue is on lines not changed in this diff; flag it anyway, boy scout rule. This is a co-tag — render it as a separate bracket alongside the source tag (e.g. `[codex] [pre-existing]`), not comma-joined inside the same bracket.
 
 **Disagreements:** If one reviewer flags something as a BLOCKER and the other doesn't mention it, call that out explicitly. Don't resolve disagreements yourself — surface them so the human can judge.
 
@@ -139,18 +152,21 @@ Wait for all reviewers to complete, then merge their results. Apply your own jud
 ISSUES FOUND
 
 🔴 BLOCKERS
-  #1 [both] — src/api/handler.ts:42
+  #1 [multiple: claude, codex] — src/api/handler.ts:42
      `user.profile` can be undefined here if auth middleware didn't run.
      Accessing `.name` will throw.
 
 🟡 WARNINGS
   #2 [claude] — src/utils/parse.ts:17
      Empty string input returns NaN silently. Caller doesn't check.
-  #3 [codex, pre-existing] — src/auth/token.ts:91
+  #3 [lead] — src/api/handler.ts:42
+     This handler is doing auth, validation, and persistence in one
+     function — splitting it would make the failure modes more obvious.
+  #4 [codex] [pre-existing] — src/auth/token.ts:91
      Token expiry never checked. Predates this change but worth fixing.
 
 ⚠️  DISAGREEMENTS
-  #4 — src/index.ts:3
+  #5 — src/index.ts:3
      Codex: WARNING — unused import `lodash`.
      Claude: not flagged.
 
