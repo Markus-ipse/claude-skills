@@ -106,7 +106,7 @@ Run Codex non-interactively using its built-in review subcommand. `--uncommitted
 codex review --uncommitted -c model_reasoning_effort=low
 ```
 
-If `codex` is not on PATH or exits with an error, return that information so the orchestrator can note it in the report and proceed without this reviewer.
+**Run the command exactly as written above.** Do NOT wrap with `command -v codex && …`, do NOT pipe through `tail`, do NOT add `2>&1` redirects. Claude Code's permission system splits on `&&`, `||`, `;`, and `|` and requires each subcommand to match an allow rule independently — wrapping with `command -v` or piping to `tail` triggers a permission prompt even though `Bash(codex review:*)` is allowed. Run `codex review` directly; if it isn't on PATH it fails with a clear error, which you should return verbatim so the orchestrator can note it and proceed without this reviewer.
 
 ### Reviewer C — Codex PR-level pass (only if Step 1b found a larger diff)
 
