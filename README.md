@@ -14,12 +14,18 @@ Analyze PR review feedback, classify comments by category (action required, bug,
 
 **Triggers:** "review PR comments", "fix PR feedback", "address review feedback".
 
+### [plan-review](plan-review/SKILL.md)
+Audit a plan against project conventions, current library/framework best practices (via the ref MCP when available), and software-engineering principles before implementation. Catches shortcuts, quick fixes, hardcoded values, ignored conventions, premature abstractions, and missing root-cause analysis, then asks for explicit confirmation.
+
+**Triggers:** manual only — `/plan-review` or by name. Does not auto-invoke.
+
 ## Layout
 
 ```
 skills/
 ├── pre-commit-review/SKILL.md
-└── fix-pr-comments/SKILL.md
+├── fix-pr-comments/SKILL.md
+└── plan-review/SKILL.md
 ```
 
 Each `SKILL.md` begins with frontmatter (`name`, `description`, optional `allowed-tools`) that Claude Code uses to decide when to invoke the skill.
