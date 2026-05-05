@@ -75,6 +75,32 @@ End the review with an explicit confirmation question in plain text, with concre
 
 Suggested phrasing: *"Want me to revise the plan with these changes, proceed as-is, or discuss a specific item?"*
 
+### Step 7 — Log the outcome and report stats
+
+After the user answers the confirmation question, log the run and print a one-line stats summary. This is how the user evaluates whether the skill is earning its token cost.
+
+Determine `outcome` from the user's answer:
+- `revised` — they asked you to revise the plan
+- `proceed` — they accepted as-is
+- `discussed` — they asked questions or pushed back without committing to a path
+- `abandoned` — they dropped the plan entirely
+
+Run (substitute the angle-bracket placeholders with real values from the review; `--top` is optional and may be repeated for the most notable issues):
+
+```bash
+SCRIPTS=~/.claude/skills/plan-review/scripts
+python3 "$SCRIPTS/log.py" append \
+  --plan "<one-line plan summary, ~60 chars>" \
+  --blockers <N> --warnings <N> --notes <N> \
+  --top "<top issue 1>" --top "<top issue 2>" \
+  --outcome <revised|proceed|discussed|abandoned>
+python3 "$SCRIPTS/log.py" stats
+```
+
+If python3 isn't on PATH or either command fails, report the failure to the user once and continue — don't loop. If the stats line looks malformed (e.g. shows `Run #0` after a successful append, or a Python traceback), surface it; don't silently swallow.
+
+Step 7 only fires if the skill instructions are still in conversation context when the user answers the confirmation question. If a long discussion or context compaction drops them, the log entry is skipped — that's acceptable, the log is best-effort.
+
 ## Non-negotiable principles
 
 State these as review checks against every plan:
