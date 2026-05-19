@@ -61,6 +61,8 @@ Review against:
 
 Be specific. When you flag something, name the file or section of the plan, quote or paraphrase the offending decision, and explain *why* it's a problem.
 
+For any spec-pair the plan presents (formula + property, regex + claim, predicate + invariant), run the spot-check from the anti-pattern checklist — trace the claim through the artifact by hand before accepting either.
+
 ### Step 5 — Recommend
 
 For each issue, propose the fix you'd actually want. If that fix is significantly larger than what the plan proposes — e.g. a refactor instead of a patch — say so explicitly. Frame the trade-off so the user can make the call:
@@ -132,6 +134,10 @@ State these as review checks against every plan:
 - Missing visual verification step for UI changes
 - Not running the project's check suite (`lint`, `typecheck`, `test`, etc.) before claiming done
 
+**Spec claim vs artifact consistency**
+- Plan pairs a concrete artifact (formula, regex, SQL predicate, retry policy, config) with a property claim about it ("covers X", "matches all valid Y", "excludes deleted rows") without tracing the claim through the artifact.
+- Spot-check: pick the boundary case the claim names, walk it through the artifact step by step, confirm the output matches the claim. Mismatch is a BLOCKER — it's a spec-level bug, not an implementation detail (the implementer will transcribe faithfully and the test author will exercise the happy path the artifact does handle, hiding the contradiction until production).
+
 **Workflow**
 - Direct commit to `main` / `master` where the project requires PRs
 - Branching, review, or merge conventions ignored
@@ -145,5 +151,11 @@ Free-form, but keep it scannable. A loose shape that works:
 - **Refactor recommendations** — where the plan should go larger, with the trade-off explained
 - **Open questions** — anything that needs the user's input before implementation can proceed
 - **Confirmation question** at the end
+
+**Severity vocabulary.** Use these three labels consistently, matching the `--blockers / --warnings / --notes` counters in Step 7:
+
+- **BLOCKER** — will cause incorrect behavior, data loss, or a security issue; must be resolved before implementation.
+- **WARNING** — likely bug, convention violation, or significant risk; should be addressed but not necessarily blocking.
+- **NOTE** — minor issue, polish, or observation; surfaced for awareness.
 
 Don't pad the review with ceremony. If the plan is genuinely good, say so briefly and ask for confirmation to proceed. If it's risky, lean into specifics — file paths, exact decisions, the underlying root cause.
