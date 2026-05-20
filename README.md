@@ -19,13 +19,19 @@ Audit a plan against project conventions, current library/framework best practic
 
 **Triggers:** manual only — `/plan-review` or by name. Does not auto-invoke.
 
+### [address-review](address-review/SKILL.md)
+Triage a just-produced review (code or plan): auto-apply clear-win fixes, walk genuine trade-offs one at a time with recommended actions, and only postpone major refactors. Ensures every finding is applied, decided, or explicitly postponed — nothing falls silently through.
+
+**Triggers:** manual only — `/address-review` or "address the review". Does not auto-invoke.
+
 ## Layout
 
 ```
 skills/
 ├── pre-commit-review/SKILL.md
 ├── fix-pr-comments/SKILL.md
-└── plan-review/SKILL.md
+├── plan-review/SKILL.md
+└── address-review/SKILL.md
 ```
 
 Each `SKILL.md` begins with frontmatter (`name`, `description`, optional `allowed-tools`) that Claude Code uses to decide when to invoke the skill.
