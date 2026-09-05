@@ -10,11 +10,13 @@ A long session accumulates dead ends, resolved errors and file dumps, and every 
 
 Modes from the argument: `/handoff [slug]` writes, `/handoff resume [slug]` resumes, `/handoff list` lists.
 
-Briefs live at `~/.claude/handoffs/<repo>/<slug>.md`, outside the repo so they never touch git status or PRs. `<repo>` is the basename of `git rev-parse --show-toplevel`; `<slug>` is a kebab-case work-stream name, usually from the branch. One file per work stream, updated in place; history goes in `Lineage`. Work spanning several repos gets one brief under the repo the session started in.
+Briefs live at `~/.claude/handoffs/<repo>/<slug>.md`, outside the code repo so they never touch its git status or PRs. That directory is itself a private git repo (`Markus-ipse/claude-handoffs`) synced between the user's machines: pull it before reading a brief, commit and push after writing one. `<repo>` is the basename of `git rev-parse --show-toplevel`; `<slug>` is a kebab-case work-stream name, usually from the branch. One file per work stream, updated in place; history goes in `Lineage`. Work spanning several repos gets one brief under the repo the session started in.
 
 ## Write
 
-Gather state first (branch, `git status --short`, recent log, unpushed commits, `gh pr list --head <branch>`), and read the existing brief for this slug if there is one so you update rather than restart.
+Gather state first (branch, `git status --short`, recent log, unpushed commits, `gh pr list --head <branch>`), `git pull` the handoffs repo, and read the existing brief for this slug if there is one so you update rather than restart.
+
+The brief may be resumed on another machine, so uncommitted or unpushed changes in the code repo will not follow it. If there are any, say so and offer to push a WIP commit on the branch; whatever is left behind goes in the brief under State so the other machine knows what it is missing.
 
 Template:
 
@@ -23,6 +25,7 @@ Template:
 
 - **Updated:** <YYYY-MM-DD HH:MM>
 - **Repos / branches:** `<repo>` @ `<branch>`
+- **Machine:** `$(hostname)`
 - **PR(s):** <url or none>
 - **Session:** <claude.ai session URL from the attribution reminder>
 
@@ -49,7 +52,7 @@ Template:
 <decisions only the user can make; external waits>
 
 ## Quick start
-<the 2–5 commands to be productive>
+<the 2–5 commands to be productive; start with `git fetch && git checkout <branch>` so it works from a clean checkout on another machine>
 
 ## Lineage
 - <date> — <one line on what that session did> — <session URL>
@@ -57,11 +60,11 @@ Template:
 
 Aim for under 80 lines. The savings come from what you leave out: anything CLAUDE.md or `docs/` already says (link the path instead), code, diffs, error output (name file and line; the next session reads it fresh), and problems already solved. Facts that outlive the task, such as a project gotcha or a user preference, belong in auto-memory, not the brief; write the memory now and reference it.
 
-Then reply with the file path, a 3–5 line summary so the user can sanity-check without opening it, and the resume line `/handoff resume <slug>` with a reminder to `/clear` first. Don't commit, and don't start more work; the point is to end the session.
+Commit and push the handoffs repo. Then reply with the file path, a 3–5 line summary so the user can sanity-check without opening it, and the resume line `/handoff resume <slug>` with a reminder to `/clear` first. Don't commit, and don't start more work; the point is to end the session.
 
 ## Resume
 
-Read the named brief, or the most recently modified one for this repo (if several, list them and ask). Read nothing else yet.
+`git pull` the handoffs repo, then read the named brief, or the most recently modified one for this repo (if several, list them and ask). Read nothing else yet.
 
 The user rebases and merges between sessions, so check for drift before trusting the brief: `git fetch`, current branch and status, commits since the Updated timestamp, whether the remote is ahead, and the PR state if one is named. If nothing moved, proceed. If things moved but the plan still holds, say what changed in a few lines, adjust the next steps, and proceed. If the plan is invalidated (branch gone, PR merged when the brief expects it open, files in the next steps no longer exist), report and stop.
 
@@ -71,4 +74,4 @@ When the resumed session ends, write the brief again under the same slug and add
 
 ## List
 
-`ls -lt ~/.claude/handoffs/<repo>/` and print slug, Updated, Goal, first next step for each.
+`git pull` the handoffs repo, `ls -lt ~/.claude/handoffs/<repo>/`, and print slug, Updated, Goal, first next step for each.
