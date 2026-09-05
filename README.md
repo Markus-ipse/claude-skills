@@ -24,6 +24,11 @@ Triage a just-produced review (code or plan): auto-apply clear-win fixes, walk g
 
 **Triggers:** manual only — `/address-review` or "address the review". Does not auto-invoke.
 
+### [handoff](handoff/SKILL.md)
+Write a compact (~80-line) brief to `~/.claude/handoffs/<repo>/<slug>.md` — goal, state, decisions, dead ends, verification, ordered next steps — so the user can `/clear` and continue in a fresh session. `resume` reloads a brief, runs a git/PR staleness check, and starts on the first next step; `list` shows briefs for the current repo.
+
+**Triggers:** manual only — `/handoff`, `/handoff resume [slug]`, `/handoff list`.
+
 ## Layout
 
 ```
@@ -31,7 +36,8 @@ skills/
 ├── pre-commit-review/SKILL.md
 ├── fix-pr-comments/SKILL.md
 ├── plan-review/SKILL.md
-└── address-review/SKILL.md
+├── address-review/SKILL.md
+└── handoff/SKILL.md
 ```
 
 Each `SKILL.md` begins with frontmatter (`name`, `description`, optional `allowed-tools`) that Claude Code uses to decide when to invoke the skill.
