@@ -41,16 +41,20 @@ Each pass reports **everything it finds**, with a confidence and a rough severit
 **Codex.** A different model, which is the entire reason it's here — it fails differently, where a second Claude pass would fail the same way. Run exactly this, unmodified:
 
 ```bash
-timeout 300 codex review --uncommitted -c model_reasoning_effort=low
+timeout 300 codex exec review --uncommitted -c model_reasoning_effort=medium -o "${TMPDIR:-/tmp}/codex-uncommitted.md"
 ```
 
-Use Codex's own review preset rather than handing it a written-out prompt. Its built-in review improves with each Codex release; a prompt pinned in this file would freeze today's version of that thinking and then quietly rot. The same reasoning applies to the native pass and to the handoff below — prefer the thing that gets better on its own.
+Read that file for the findings. `-o` writes Codex's final review there, so the merge works from one clean artifact instead of scraping it out of the progress output that also goes to stdout.
 
-Two mechanics, both load-bearing. Claude Code's permission system splits on `&&`, `||`, `;` and `|` and matches each piece against an allow rule separately, so wrapping this in `command -v`, piping it to `tail`, or adding `2>&1` turns an allowed command into a permission prompt — `timeout` introduces no operator and is safe. And the timeout is not decoration: Codex has a known failure where an internal git command exits non-zero, the error is reported, and the turn never ends, leaving the process alive indefinitely. An external watchdog is the only thing that stops it. Treat a timeout kill as a Codex failure, not a clean review.
+`codex exec review` rather than the plain `codex review`: both run non-interactively, but only the `exec` form has `-o`, `--json`, and `-m/--model`, and the last of those is the escape hatch if this pass ever needs a stronger model than the session default.
+
+Codex accepts custom review instructions as a trailing `[PROMPT]` argument, even alongside `--uncommitted`. Don't use it. Its built-in review improves with each Codex release, and a prompt pinned in this file would freeze today's version of that thinking and then quietly rot — the same reason the native pass and the handoff below lean on their own built-ins. `--output-schema` is available and is declined for the same reason: constraining the shape of the final response constrains the review that produces it.
+
+Two mechanics, both load-bearing. Claude Code's permission system splits on `&&`, `||`, `;` and `|` and matches each piece against an allow rule separately, so wrapping this in `command -v`, piping it to `tail`, or adding `2>&1` turns an allowed command into a permission prompt — `timeout` and the `-o` redirect-to-file introduce no operator and are safe. And the timeout is not decoration: Codex has a known failure where an internal git command exits non-zero, the error is reported, and the turn never ends, leaving the process alive indefinitely. An external watchdog is the only thing that stops it. Treat a timeout kill as a Codex failure, not a clean review — and check the output file exists before reading it, since a killed run may never have written one.
 
 If Codex isn't installed it fails with a clear error — pass that through verbatim and carry on.
 
-**PR-level.** The same command against the base branch, `--base "$base_branch"` in place of `--uncommitted`, using whichever of `origin/main` or `origin/master` exists. Catches what per-commit review structurally cannot: a helper added in one commit and orphaned by a later one, a feature whose tests never landed. Tag these findings `[pr-scope]`, and drop any the Codex pass already caught.
+**PR-level.** The same command against the base branch — `--base "$base_branch"` in place of `--uncommitted`, a different `-o` path — using whichever of `origin/main` or `origin/master` exists. Catches what per-commit review structurally cannot: a helper added in one commit and orphaned by a later one, a feature whose tests never landed. Tag these findings `[pr-scope]`, and drop any the Codex pass already caught.
 
 **Product.** A sub-agent (`general-purpose`) wearing the product-owner hat. Give it the intent, the product context you can find (`README.md`, `PRODUCT.md`, the branch name), and the selected diff in a fence long enough not to collide with fences inside the diff. Ask it:
 
