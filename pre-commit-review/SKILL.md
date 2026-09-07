@@ -41,12 +41,16 @@ Each pass reports **everything it finds**, with a confidence and a rough severit
 **Codex.** A different model, which is the entire reason it's here — it fails differently, where a second Claude pass would fail the same way. Run exactly this, unmodified:
 
 ```bash
-codex review --uncommitted -c model_reasoning_effort=low
+timeout 300 codex review --uncommitted -c model_reasoning_effort=low
 ```
 
-Claude Code's permission system splits on `&&`, `||`, `;` and `|` and matches each piece against an allow rule separately, so wrapping this in `command -v`, piping it to `tail`, or adding `2>&1` turns an allowed command into a permission prompt. If Codex isn't installed it fails with a clear error — pass that through verbatim and carry on.
+Use Codex's own review preset rather than handing it a written-out prompt. Its built-in review improves with each Codex release; a prompt pinned in this file would freeze today's version of that thinking and then quietly rot. The same reasoning applies to the native pass and to the handoff below — prefer the thing that gets better on its own.
 
-**PR-level.** `codex review --base "$base_branch" -c model_reasoning_effort=low`, against whichever of `origin/main` or `origin/master` exists. Catches what per-commit review structurally cannot: a helper added in one commit and orphaned by a later one, a feature whose tests never landed. Tag these findings `[pr-scope]`, and drop any the Codex pass already caught.
+Two mechanics, both load-bearing. Claude Code's permission system splits on `&&`, `||`, `;` and `|` and matches each piece against an allow rule separately, so wrapping this in `command -v`, piping it to `tail`, or adding `2>&1` turns an allowed command into a permission prompt — `timeout` introduces no operator and is safe. And the timeout is not decoration: Codex has a known failure where an internal git command exits non-zero, the error is reported, and the turn never ends, leaving the process alive indefinitely. An external watchdog is the only thing that stops it. Treat a timeout kill as a Codex failure, not a clean review.
+
+If Codex isn't installed it fails with a clear error — pass that through verbatim and carry on.
+
+**PR-level.** The same command against the base branch, `--base "$base_branch"` in place of `--uncommitted`, using whichever of `origin/main` or `origin/master` exists. Catches what per-commit review structurally cannot: a helper added in one commit and orphaned by a later one, a feature whose tests never landed. Tag these findings `[pr-scope]`, and drop any the Codex pass already caught.
 
 **Product.** A sub-agent (`general-purpose`) wearing the product-owner hat. Give it the intent, the product context you can find (`README.md`, `PRODUCT.md`, the branch name), and the selected diff in a fence long enough not to collide with fences inside the diff. Ask it:
 
@@ -67,6 +71,8 @@ Rank once, here, using your own judgment rather than concatenating. Order by wha
 Two mapping notes. The native pass reports `CONFIRMED` or `PLAUSIBLE` rather than a severity — take severity from the finding's own consequence and let the verdict adjust it, dropping a plausible finding a level unless another pass found it independently. Product findings sit low by default, and rise when the change would ship confusing or half-finished behavior, or regress something users depend on.
 
 Say which pass found what. Where two passes agree independently, say that too — it's the strongest signal in the report. Where they disagree, show both positions and leave it; resolving it silently throws away the disagreement, which is the useful part.
+
+One asymmetry to respect: the Codex passes arrive already filtered by whatever bar Codex applies internally, and this skill deliberately doesn't override it. So Codex finding nothing minor is not evidence there is nothing minor — read its silence on low-severity issues as no information, never as a second vote for clean.
 
 ## What happens next
 
