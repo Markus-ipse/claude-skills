@@ -5,7 +5,7 @@ Personal skills for [Claude Code](https://claude.com/claude-code). Each subdirec
 ## Skills
 
 ### [pre-commit-review](pre-commit-review/SKILL.md)
-Mandatory systematic review before every commit. Runs Claude and Codex reviewers in parallel across six dimensions (correctness, bugs, security, performance, tests, quality), plus an optional PR-level pass against the base branch to catch cross-commit issues. Mirrors the GitHub PR-review Action so nothing resurfaces there.
+Review before every commit, with depth routed mechanically by what changed. Docs-only changes get the built-in `/code-review` pass alone; touching source adds a Codex pass (a different model, so it fails differently) and a product-owner pass asking whether the change actually serves the end user. A branch ahead of its base also gets a PR-level pass for issues no single commit shows. Passes report everything they find and rank nothing — filtering at the finding stage costs recall — so severity is assigned once, at the merge. Hands findings to `address-review` rather than fixing in place.
 
 **Triggers:** "review before commit", "quick review", "looks good?", "ship it", or any `git commit`.
 
@@ -22,7 +22,7 @@ Audit a plan against project conventions, current library/framework best practic
 ### [address-review](address-review/SKILL.md)
 Triage a just-produced review (code or plan): auto-apply clear-win fixes, walk genuine trade-offs one at a time with recommended actions, and only postpone major refactors. Ensures every finding is applied, decided, or explicitly postponed — nothing falls silently through.
 
-**Triggers:** manual only — `/address-review` or "address the review". Does not auto-invoke.
+**Triggers:** `/address-review`, "address the review", or a handoff from `pre-commit-review`. Does not auto-invoke after other review skills.
 
 ### [handoff](handoff/SKILL.md)
 Write a compact (~80-line) brief to `~/.claude/handoffs/<repo>/<slug>.md` (a private git repo synced across machines) — goal, state, decisions, dead ends, verification, ordered next steps — so the user can `/clear` and continue in a fresh session. `resume` reloads a brief, runs a git/PR staleness check, and starts on the first next step; `list` shows briefs for the current repo.
