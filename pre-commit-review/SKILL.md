@@ -29,7 +29,8 @@ Mechanical, so it can't be argued with:
 Test the first rule first; the paths are exclusive and the full path wins.
 
 - **Any changed file executes or pins a dependency** → native pass, Codex pass, and product pass. Source files, obviously, but also CI workflow YAML, Dockerfiles, Terraform and other deployment manifests, and lockfiles. These look inert and are not: a widened permission, an unsafe container setting or a compromised transitive dependency is a security finding, and the coverage map below gives security exactly one owner — the Codex pass. The test is the file, never the edit inside it: a comment-only or string-only change to a source file still takes this path. Copy is the case that most needs the product pass, since a reworded error message or empty state is a user-facing change wearing a one-line diff, and routing it as prose would skip the one reviewer looking for exactly that.
-- **No changed file does** → native pass alone. Standalone documentation, markdown, prose files — nothing the build or the runtime reads.
+  The same applies to files the build or the runtime *reads*, even though nothing in them executes: localization catalogs, prompt and template files, feature-flag and other configuration JSON, static UI content, schemas. A flipped flag or a reworded catalog string changes what users get and can change what is permitted, so these belong here rather than with prose.
+- **No changed file does** → native pass alone. Standalone documentation and prose — a README, a changelog, developer notes. The test is whether anything but a human ever reads the file; if the build, the runtime or the deploy does, it took the path above.
 - **The branch is at least one commit ahead of `origin/main` or `origin/master`** → add the PR-level pass. Skip it on the default branch, or when no base ref exists. One commit ahead is the threshold rather than two because the commit you are about to make is the second: this is the first moment a cross-commit defect can exist, and waiting for the branch to already hold two means a two-commit branch that gets pushed never receives a cumulative review at all.
 
 ## The passes
@@ -45,8 +46,10 @@ Each pass reports **everything it finds**, with a confidence and a rough severit
 **Codex.** A different model, which is the entire reason it's here — it fails differently, where a second Claude pass would fail the same way. Run exactly this, unmodified:
 
 ```bash
-timeout 300 codex exec review --uncommitted -c model_reasoning_effort=medium -o "${TMPDIR:-/tmp}/codex-uncommitted.md"
+timeout 300 codex exec review --uncommitted -c model_reasoning_effort=medium -o "${TMPDIR:-/tmp}/pcr-<run-id>/uncommitted.md"
 ```
+
+Pick a `<run-id>` unique to this review — a timestamp will do — create that directory, and use the same literal path when you read the file back. A fixed filename is not safe here: two reviews running at once on the same machine would overwrite each other's findings, and a stale file left by an earlier run defeats the existence check below, since a file being present would no longer be evidence that *this* invocation wrote it.
 
 Read that file for the findings. `-o` writes Codex's final review there, so the merge works from one clean artifact instead of scraping it out of the progress output that also goes to stdout.
 
@@ -58,7 +61,9 @@ Two mechanics, both load-bearing. Claude Code's permission system splits on `&&`
 
 If Codex isn't installed it fails with a clear error — pass that through verbatim and carry on.
 
-**PR-level.** The same command against the base branch — `--base "$base_branch"` in place of `--uncommitted`, a different `-o` path — using whichever of `origin/main` or `origin/master` exists. Catches what per-commit review structurally cannot: a helper added in one commit and orphaned by a later one, a feature whose tests never landed. Tag these findings `[pr-scope]`, and drop any the Codex pass already caught.
+**PR-level.** The same command against the base branch — `--base "$base_branch"` in place of `--uncommitted`, its own `-o` path under the same run directory — using whichever of `origin/main` or `origin/master` exists. Catches what per-commit review structurally cannot: a helper added in one commit and orphaned by a later one, a feature whose tests never landed. Tag these findings `[pr-scope]`, and drop any the Codex pass already caught.
+
+Be exact about what this pass can see. `--base` reviews the committed range from the base branch to `HEAD`; `--uncommitted` reviews the staged and unstaged working tree. No preset covers both, so at pre-commit time the PR-level pass reviews the commits already made and **cannot see the change you are about to commit**. It therefore catches cross-commit defects among existing commits, but not an interaction between the pending change and an earlier one — that surfaces on the next review, once this commit is part of the range. Say so when reporting `[pr-scope]` findings rather than letting the report imply the cumulative view included the staged work.
 
 **Product.** A sub-agent (`general-purpose`) wearing the product-owner hat. Give it the intent, the product context you can find (`README.md`, `PRODUCT.md`, the branch name), and the selected diff in a fence long enough not to collide with fences inside the diff. Ask it:
 
