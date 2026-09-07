@@ -38,6 +38,8 @@ Each pass reports **everything it finds**, with a confidence and a rough severit
 
 **Native.** Invoke the `code-review` skill with args `high`. Explicit effort matters: with none given it inherits whichever level was typed last, so runs stop being comparable. It reports through a UI widget and is told not to restate findings as text — that's expected; carry them into the merged report regardless, which is this skill's actual output. Don't pass `--fix` (fixes are applied at the handoff below, under a policy `--fix` can't express) or `--comment` (this is a local gate, not a PR).
 
+**Check what it actually reviewed before you use a word of it.** `code-review` resolves its own scope — a branch range against the upstream, in whatever directory the session is running from — and does not inherit the selected diff. It will not error when that resolves to something else; it returns a confident, well-formed review of the wrong changes. Observed in practice: it reviewed a different repository entirely and returned a dozen plausible findings about files nobody had touched. So compare the files it names against the files in the selected diff, and drop every finding that falls outside. If none of them overlap, treat the pass as failed rather than salvaging it, say so in the report, and do the native pass yourself against the selected diff at the same depth. A silently mis-scoped pass merged into the report is worse than a pass that didn't run, because the report then vouches for changes nobody read.
+
 **Codex.** A different model, which is the entire reason it's here — it fails differently, where a second Claude pass would fail the same way. Run exactly this, unmodified:
 
 ```bash
