@@ -1,197 +1,98 @@
 ---
 name: pre-commit-review
-description: Use when user asks to review code before committing, when about to create a commit, or when user says "quick review", "looks good?", "ship it", or any variant. REQUIRED for ALL commits regardless of size — especially one-liners that seem obviously safe. If Claude is about to run `git commit`, this skill must run first.
+description: Review changes before they are committed. Use when the user asks for a review before committing, signals they are ready to ship, or when Claude is about to run `git commit` — run this first, including for one-line changes.
+allowed-tools: Bash, Read, Grep, Glob, Edit, Skill, Agent, AskUserQuestion
 ---
 
-# Pre-Commit Review
+# pre-commit-review
 
-**MANDATORY systematic review** before every commit. This is a discipline-enforcing skill, not an optional shortcut.
+Every commit gets reviewed. What changes is the depth, not whether it happens — and depth is decided by the routing rule below, not by judging whether a change looks risky enough to bother with. That judgment is the one this skill exists to take away.
 
-**The Iron Law: Review every commit. No exceptions. No judgment calls about when to skip.**
+## What you are reviewing
 
-One-liners crash production. Division by zero, off-by-one, unhandled None, hardcoded secret accidentally left in — "quick reviews" exist because these bugs are real and common. If you're about to commit, run this skill. Period.
+The staged diff (`git diff --cached`) when anything is staged, otherwise the working tree. If nothing is staged, say so and ask which the user wants. Everything below calls this the selected diff.
 
----
+Also look at `git status`. Unstaged changes that clearly belong with the staged work usually mean the user forgot to stage a file — say so.
 
-## Step 1: Get the diff
+## Intent
 
-Run these to see exactly what's going into the commit:
+You need to know what the change is *for*, and you cannot get that from the diff — inferring intent from the code and then checking the code against it only detects internal inconsistency.
+
+Take intent from outside the diff, in this order: what you already know if this change came out of the current conversation; the branch name, ticket reference, or recent commit messages; the user, if none of those settle it. State it in one sentence at the top of the report so a wrong reading is visible immediately.
+
+Load `CLAUDE.md` from the repo root and from the directories of changed files. Conventions defined there are reviewable; rules not written down anywhere are not.
+
+## Routing
+
+Mechanical, so it can't be argued with:
+
+Test the first rule first; the paths are exclusive and the full path wins.
+
+- **Any changed file executes or pins a dependency** → native pass, Codex pass, and product pass. Source files, obviously, but also CI workflow YAML, Dockerfiles, Terraform and other deployment manifests, and lockfiles. These look inert and are not: a widened permission, an unsafe container setting or a compromised transitive dependency is a security finding, and the coverage map below gives security exactly one owner — the Codex pass. The test is the file, never the edit inside it: a comment-only or string-only change to a source file still takes this path. Copy is the case that most needs the product pass, since a reworded error message or empty state is a user-facing change wearing a one-line diff, and routing it as prose would skip the one reviewer looking for exactly that.
+  The same applies to files the build or the runtime *reads*, even though nothing in them executes: localization catalogs, prompt and template files, feature-flag and other configuration JSON, static UI content, schemas. A flipped flag or a reworded catalog string changes what users get and can change what is permitted, so these belong here rather than with prose.
+- **No changed file does** → native pass alone. Standalone documentation and prose — a README, a changelog, developer notes. The test is whether anything but a human ever reads the file; if the build, the runtime or the deploy does, it took the path above.
+- **The branch is at least one commit ahead of `origin/main` or `origin/master`** → add the PR-level pass. Skip it on the default branch, or when no base ref exists. One commit ahead is the threshold rather than two because the commit you are about to make is the second: this is the first moment a cross-commit defect can exist, and waiting for the branch to already hold two means a two-commit branch that gets pushed never receives a cumulative review at all.
+
+## The passes
+
+Run them concurrently — issue the calls in one message rather than waiting on each.
+
+Each pass reports **everything it finds**, with a confidence and a rough severity attached to each finding, and filters nothing. Coverage is the goal here; ranking happens once, at the merge. A pass told to report only what matters will find a bug and then decline to mention it, which costs real recall — so do not add a bar, and if a pass volunteers one, keep the finding anyway.
+
+**Native.** Invoke the `code-review` skill with args `high`. Explicit effort matters: with none given it inherits whichever level was typed last, so runs stop being comparable. It reports through a UI widget and is told not to restate findings as text — that's expected; carry them into the merged report regardless, which is this skill's actual output. Don't pass `--fix` (fixes are applied at the handoff below, under a policy `--fix` can't express) or `--comment` (this is a local gate, not a PR).
+
+**Check what it actually reviewed before you use a word of it.** `code-review` resolves its own scope — a branch range against the upstream, in whatever directory the session is running from — and does not inherit the selected diff. It will not error when that resolves to something else; it returns a confident, well-formed review of the wrong changes. Observed in practice: it reviewed a different repository entirely and returned a dozen plausible findings about files nobody had touched. So check what it reviewed by content, and start from the assumption it did not. Matching filenames are not evidence it read your change: when the branch already has a committed edit to a file the staged diff touches again, it can report entirely on the earlier commit's hunks in that same file and still look like a hit. Those findings then fall to the unchanged-lines rule below and vanish, leaving a report that claims native coverage no native pass actually performed. Line numbers are no better: when a committed edit and the staged diff touch the same line, a finding about the committed version sits at exactly the right coordinates while describing code you are not committing. Position cannot separate two versions of one line — only content can. So quote the code each finding is about and confirm that text appears in the selected diff's added lines; drop the ones that don't. Since `code-review` cannot currently be pinned to a diff, treat the manual native pass as the default rather than the fallback: do it yourself against the selected diff, and let `code-review`'s surviving findings add to it rather than stand in for it. It is a strong reviewer and worth running — it just cannot be trusted to have read the thing you are about to commit. A silently mis-scoped pass merged into the report is worse than a pass that didn't run, because the report then vouches for changes nobody read.
+
+**Codex.** A different model, which is the entire reason it's here — it fails differently, where a second Claude pass would fail the same way. Run exactly this, unmodified:
 
 ```bash
-git diff --cached          # staged changes (what will be committed)
-git diff                   # unstaged changes (remind user if anything was forgotten)
-git status                 # full picture
+timeout 300 codex exec review --uncommitted -c model_reasoning_effort=medium -o "${TMPDIR:-/tmp}/pcr-<run-id>/uncommitted.md"
 ```
 
-If nothing is staged, tell the user and ask whether they want to stage files first or review the working tree diff instead.
+Pick a `<run-id>` unique to this review — a timestamp will do — create that directory, and use the same literal path when you read the file back. A fixed filename is not safe here: two reviews running at once on the same machine would overwrite each other's findings, and a stale file left by an earlier run defeats the existence check below, since a file being present would no longer be evidence that *this* invocation wrote it.
 
-The **selected diff** for this review is the staged diff (`git diff --cached`) when anything is staged, or the working-tree diff (`git diff`) when the user opted to review unstaged changes. Later steps refer to "the selected diff" without re-stating the rule.
+Read that file for the findings. `-o` writes Codex's final review there, so the merge works from one clean artifact instead of scraping it out of the progress output that also goes to stdout.
 
----
+`codex exec review` rather than the plain `codex review`: both run non-interactively, but only the `exec` form has `-o`, `--json`, and `-m/--model`, and the last of those is the escape hatch if this pass ever needs a stronger model than the session default.
 
-## Step 1b: Detect PR-level scope
+Codex accepts custom review instructions as a trailing `[PROMPT]` argument, even alongside `--uncommitted`. Don't use it. Its built-in review improves with each Codex release, and a prompt pinned in this file would freeze today's version of that thinking and then quietly rot — the same reason the native pass and the handoff below lean on their own built-ins. `--output-schema` is available and is declined for the same reason: constraining the shape of the final response constrains the review that produces it.
 
-A per-commit review can't see issues that emerge from the *combination* of several commits — dead code added in one commit and never used, a helper added early but the call site reshuffled later, missing tests for a feature spread across commits. The GH PR-review Action sees those because it diffs against the base branch. Mirror that.
+Two mechanics, both load-bearing. Claude Code's permission system splits on `&&`, `||`, `;` and `|` and matches each piece against an allow rule separately, so wrapping this in `command -v`, piping it to `tail`, or adding `2>&1` turns an allowed command into a permission prompt — `timeout` and the `-o` redirect-to-file introduce no operator and are safe. And the timeout is not decoration: Codex has a known failure where an internal git command exits non-zero, the error is reported, and the turn never ends, leaving the process alive indefinitely. An external watchdog is the only thing that stops it. Treat a timeout kill as a Codex failure, not a clean review — and check the output file exists before reading it, since a killed run may never have written one.
 
-```bash
-current=$(git rev-parse --abbrev-ref HEAD)                                  # current branch
-base_branch=""                                                              # resolve base ref
-git rev-parse --verify --quiet origin/main  >/dev/null && base_branch=origin/main
-[ -z "$base_branch" ] && git rev-parse --verify --quiet origin/master >/dev/null && base_branch=origin/master
-[ -n "$base_branch" ] && git diff "$base_branch"...HEAD --stat              # PR-level diff size
-```
+If Codex isn't installed it fails with a clear error — pass that through verbatim and carry on.
 
-Skip the PR-level pass entirely when:
-- current branch is `main` or `master`, OR
-- `$base_branch` is empty (no `origin/main` or `origin/master` exists), OR
-- the PR-level diff is the same size as the staged diff (nothing extra to review).
+**PR-level.** The same command against the base branch — `--base "$base_branch"` in place of `--uncommitted`, its own `-o` path under the same run directory — using whichever of `origin/main` or `origin/master` exists. Catches what per-commit review structurally cannot: a helper added in one commit and orphaned by a later one, a feature whose tests never landed. Tag these findings `[pr-scope]`, and drop any the Codex pass already caught.
 
-Otherwise pass `$base_branch` to Reviewer C in Step 3.
+Be exact about what this pass can see. `--base` reviews the committed range from the base branch to `HEAD`; `--uncommitted` reviews the staged and unstaged working tree. No preset covers both, so at pre-commit time the PR-level pass reviews the commits already made and **cannot see the change you are about to commit**. It therefore catches cross-commit defects among existing commits, but not an interaction between the pending change and an earlier one — that surfaces on the next review, once this commit is part of the range. Say so when reporting `[pr-scope]` findings rather than letting the report imply the cumulative view included the staged work.
 
----
+**Product.** A sub-agent (`general-purpose`) wearing the product-owner hat. Give it the intent, the product context you can find (`README.md`, `PRODUCT.md`, the branch name), and the selected diff in a fence long enough not to collide with fences inside the diff. Ask it:
 
-## Step 2: Establish intent and load conventions
+> You are the product owner. The other reviewers cover correctness, security and style — don't duplicate them. Does this solve the user's actual problem or only the ticket's literal wording? Does it change behavior people already rely on — defaults, error messages, empty states? Is it gold-plated, or half-shipped in a way that leaves the feature unusable? Does it move toward goals actually stated in the context you were given, and what's still missing before someone could use this — docs, migration, a way to discover it exists? Cite file and line where a point attaches to code. If this is a pure refactor or a build fix with no user-visible dimension, say that in one line and stop.
 
-Before reviewing, gather two things.
+If the spawn fails, note the error in the report and continue.
 
-**Intent** — Run:
+## Coverage
 
-```bash
-git log --oneline -5          # recent commit messages for context
-```
+Nobody covers everything. Correctness and code quality come from the native and Codex passes; **security, performance and test coverage have only the Codex pass**. So if Codex didn't run, say which dimensions went unreviewed — a clean verdict without it is a narrower claim than one with it, and should read that way.
 
-Infer the intent from the diff itself, variable/function names, comments, and the git log. State your understanding explicitly at the top of the review — one sentence is enough:
+Findings on lines the diff didn't touch belong in a backlog, not here. The same legacy issues resurfacing on every commit train the reader to skim. Mention one only when the change makes it newly reachable.
 
-> "Reading this as: adds rate limiting to the login endpoint, capping at 5 attempts per minute per IP."
+That rule is about the per-commit passes — native and Codex — and must not be applied to the PR-level pass, which would gut it. Cross-commit defects are precisely the ones whose actionable line sits in an earlier commit: a helper added two commits ago and orphaned by this one is reported at the helper, which the staged diff never touches. Test PR-level findings against the cumulative diff from the base branch instead. A finding this pass exists to produce is not out of scope for being outside the staged diff.
 
-If intent is genuinely unclear from all available context, ask before reviewing — a review against the wrong goal is worse than no review.
+## Merging
 
-**Conventions** — Load any CLAUDE.md files relevant to the changed code:
+Rank once, here, using your own judgment rather than concatenating. Order by what it costs to be wrong: things that will crash, lose data, expose a vulnerability, or ship plainly wrong behavior; then likely bugs and unsafe practice; then everything else.
 
-```bash
-cat CLAUDE.md 2>/dev/null                        # root conventions
-git diff --cached --name-only | xargs -I{} dirname {} | sort -u | while read dir; do
-  [ -f "$dir/CLAUDE.md" ] && cat "$dir/CLAUDE.md"
-done                                             # directory-level conventions
-```
+Two mapping notes. The native pass reports `CONFIRMED` or `PLAUSIBLE` rather than a severity — take severity from the finding's own consequence and let the verdict adjust it, dropping a plausible finding a level unless another pass found it independently. Product findings sit low by default, and rise when the change would ship confusing or half-finished behavior, or regress something users depend on.
 
-Pass the contents of any found CLAUDE.md files to Reviewer A. Codex's `review` subcommand doesn't accept a custom prompt alongside its scope flags (`--uncommitted`, `--base`), so Reviewers B and C rely on Codex's built-in review logic — they don't receive the intent statement or CLAUDE.md contents.
+Say which pass found what. Where two passes agree independently, say that too — it's the strongest signal in the report. Where they disagree, show both positions and leave it; resolving it silently throws away the disagreement, which is the useful part.
 
----
+One asymmetry to respect: the Codex passes arrive already filtered by whatever bar Codex applies internally, and this skill deliberately doesn't override it. So Codex finding nothing minor is not evidence there is nothing minor — read its silence on low-severity issues as no information, never as a second vote for clean.
 
-## Step 3: Run reviewers in parallel
+## What happens next
 
-Spawn the reviewers simultaneously using the Agent tool — don't wait for one to finish before starting the next. Reviewers A, B, and D always run. Reviewer C runs only if Step 1b said the PR-level diff is larger than the staged diff. Reviewer A receives the intent statement from Step 2 and any CLAUDE.md contents; Reviewers B and C use Codex's built-in review logic (scope flags preclude a custom prompt); Reviewer D gets only the diff and a one-line prompt (deliberately minimal).
+Report the verdict and the findings, then hand the findings to `address-review`, which applies the clear wins and walks the genuine trade-offs one at a time. Don't apply fixes yourself here — that skill already has the policy, and duplicating it here means two policies that will drift.
 
-Reviewers A and B must explicitly cover all six dimensions below — in this order. The GH PR-review Action checks the same list, so anything missed here will resurface there. (Reviewer C has narrower scope — PR-level only. Reviewer D has a different framing — open-ended, no checklist. See their sections.)
+Once fixes are applied, run the repo's own checks (its lint, typecheck and test commands) and report what they actually printed. A fix that hasn't been run is a guess, and should be labeled one. If tests fail, say so with the output.
 
-1. **Correctness** — does the code actually implement the intent from Step 2? A condition can be technically valid but logically inverted; a formula can parse correctly but compute the wrong thing; the right field might be read but the wrong one written. Check semantics, not just syntax.
-2. **Bugs & edge cases** — what inputs, states, or conditions could the code encounter that it doesn't handle? Think adversarially about boundaries, concurrency, error paths, and assumptions the code is silently making.
-3. **Security** — what could an attacker (or a malformed input from a trusted source) do here? Consider trust boundaries, data flowing in from outside the system, anything sensitive flowing out, and any operation that grants privilege or accesses resources.
-4. **Performance** — under realistic load and data sizes, will this scale? Look for work that grows with input, repeated work, blocking operations, and resource use that isn't obvious from the local code.
-5. **Test coverage** — for every new or non-trivially changed function, is there a test? If tests changed, do they actually exercise the new behavior or only the happy path? Are error paths and edge cases tested?
-6. **Code quality** — naming, dead code, duplicated logic, unused imports, debug output left in, violations of any loaded CLAUDE.md conventions. Only flag concrete problems, not stylistic preferences.
-
-For pre-existing issues (on lines not modified in this diff), flag them anyway and mark them `pre-existing` so the human can triage.
-
-### Reviewer A — Claude (native)
-
-Read the diff carefully and walk through the six dimensions above. Trust your instincts — if something feels off, flag it even if you can't immediately categorize why.
-
-If CLAUDE.md files were loaded, check the changes against the conventions they define. Only flag violations that are explicitly called out — don't invent rules that aren't there.
-
-### Reviewer B — Codex (via CLI)
-
-Run Codex non-interactively using its built-in review subcommand. `--uncommitted` cannot be combined with a custom `[PROMPT]`, so rely on Codex's built-in review logic (it already covers the six dimensions):
-
-```bash
-codex review --uncommitted -c model_reasoning_effort=low
-```
-
-**Run the command exactly as written above.** Do NOT wrap with `command -v codex && …`, do NOT pipe through `tail`, do NOT add `2>&1` redirects. Claude Code's permission system splits on `&&`, `||`, `;`, and `|` and requires each subcommand to match an allow rule independently — wrapping with `command -v` or piping to `tail` triggers a permission prompt even though `Bash(codex review:*)` is allowed. Run `codex review` directly; if it isn't on PATH it fails with a clear error, which you should return verbatim so the orchestrator can note it and proceed without this reviewer.
-
-### Reviewer C — Codex PR-level pass (only if Step 1b found a larger diff)
-
-Skip if Step 1b said to skip. Otherwise run **one** additional Codex review against the base branch to catch issues invisible at single-commit scope. Use `codex review --base` (purpose-built for this) — do not pipe diffs into `codex exec`. `--base` cannot be combined with a custom `[PROMPT]`, so rely on Codex's built-in PR-level logic:
-
-```bash
-codex review --base "$base_branch" -c model_reasoning_effort=low
-```
-
-Tag any issues from this pass `[pr-scope]` in the merged report.
-
-### Reviewer D — Claude sub-agent (senior tech-lead pass)
-
-Spawn a Claude sub-agent via the Agent tool with `subagent_type: "general-purpose"`. The prompt is deliberately minimal — the open-ended framing is what differentiates this reviewer from A.
-
-Construct the prompt by combining the literal sentence `Do a senior tech-lead level code review.` followed by a blank line and the selected diff from Step 1. Wrap the diff in a fence delimiter that cannot appear inside the diff itself. Scan the diff for fence runs as follows: for each line, strip the leading diff prefix (`+`, `-`, or space) before checking, then find the longest run of consecutive backticks at the start of the stripped line and the longest run of consecutive tildes. Pick a fence family (backticks or tildes) and use a fence at least one character longer than the longest run found in that family. If the diff has no fences at all, three backticks or three tildes suffice. No six-dimension checklist, no CLAUDE.md, no intent statement.
-
-If the sub-agent spawn fails (e.g. the `general-purpose` subagent_type isn't registered, or the Agent tool returns an error), include the verbatim error message as a NOTE in the merged report explaining why D didn't run, and continue with the remaining reviewers.
-
-Tag any issues this pass produces `[lead]` in the merged report.
-
----
-
-## Step 4: Merge and output
-
-Wait for all reviewers to complete, then merge their results. Apply your own judgment when merging — don't just concatenate blindly. Group issues by **severity** (BLOCKER → WARNING → NOTE → DISAGREEMENT) so the most important issues are read first. Within each severity group, order by impact. Severity assignment is the merger's responsibility for all reviewers. Reviewer D outputs no severity hints (no checklist), so default its findings to NOTE, but upgrade to WARNING when the finding describes a likely bug, unsafe practice, or anything touching auth, persistence, or external input — D often phrases security concerns in plain terms without using the word "security". Upgrade to BLOCKER for explicit crash, data-loss, or exploitable-vulnerability descriptions.
-
-**Tagging:**
-- `[multiple: …]` — flagged by 2+ reviewers (high confidence). Always enumerate which ones inline in alphabetical order, e.g. `[multiple: claude, codex]`, `[multiple: claude, lead]`, `[multiple: claude, codex, lead]`. (Predictable order keeps downstream parsing/grep deterministic.)
-- `[claude]` — only Reviewer A flagged it
-- `[codex]` — only Reviewer B flagged it
-- `[lead]` — only Reviewer D flagged it (senior tech-lead pass)
-- `[pr-scope]` — flagged by Reviewer C, only visible across the cumulative PR diff. If Reviewer B already caught the same issue at single-commit scope, prefer `[codex]` alone (de-dupe — `[pr-scope]` is reserved for findings that wouldn't surface without the PR-level pass).
-- `[pre-existing]` — issue is on lines not changed in this diff; flag it anyway, boy scout rule. This is a co-tag — render it as a separate bracket alongside the source tag (e.g. `[codex] [pre-existing]`), not comma-joined inside the same bracket.
-
-**Disagreements:** If one reviewer flags something as a BLOCKER and the other doesn't mention it, call that out explicitly. Don't resolve disagreements yourself — surface them so the human can judge.
-
-**If issues found:** Group by severity. Show each section header only if it has entries.
-
-```
-ISSUES FOUND
-
-🔴 BLOCKERS
-  #1 [multiple: claude, codex] — src/api/handler.ts:42
-     `user.profile` can be undefined here if auth middleware didn't run.
-     Accessing `.name` will throw.
-
-🟡 WARNINGS
-  #2 [claude] — src/utils/parse.ts:17
-     Empty string input returns NaN silently. Caller doesn't check.
-  #3 [lead] — src/api/handler.ts:42
-     This handler is doing auth, validation, and persistence in one
-     function — splitting it would make the failure modes more obvious.
-  #4 [codex] [pre-existing] — src/auth/token.ts:91
-     Token expiry never checked. Predates this change but worth fixing.
-
-⚠️  DISAGREEMENTS
-  #5 — src/index.ts:3
-     Codex: WARNING — unused import `lodash`.
-     Claude: not flagged.
-
----
-VERDICT: ❌ NOT READY — #1 is a blocker.
-```
-
-**If no issues found:**
-```
-No issues found across [N] changed files. All reviewers agree.
-
-VERDICT: ✅ LGTM — safe to commit.
-```
-
-**Severity guide:**
-- 🔴 BLOCKER — will crash, data loss, security vulnerability, or definitely wrong behavior
-- 🟡 WARNING — likely bug, bad practice, or something that should be addressed soon
-- 🔵 NOTE — minor issue or observation; doesn't block the commit
-- ⚠️  DISAGREEMENT — reviewers reached different conclusions; human judgment required
-
----
-
-## Notes
-
-- **Don't auto-fix.** Report issues and let the human decide. Your job is to find problems, not silently patch them.
-- **Be specific.** Always include file + line number when possible. Vague feedback ("error handling could be better") is not useful.
-- **Don't pad.** If a file is clean, say so and move on. The report should contain signal, not noise.
-- **Unstaged changes:** If `git diff` shows unstaged changes that seem related to the work being committed, flag them — the developer may have forgotten to stage something.
+Keep the report to what the reader will act on. Name the file and line every time. If a file is clean, say so in a few words and move on.
