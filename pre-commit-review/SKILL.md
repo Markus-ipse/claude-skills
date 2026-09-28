@@ -46,14 +46,14 @@ Each pass reports **everything it finds**, with a confidence and a rough severit
 **Codex.** A different model, which is the entire reason it's here — it fails differently, where a second Claude pass would fail the same way. Run exactly this, unmodified:
 
 ```bash
-timeout 300 codex exec review --uncommitted -c model_reasoning_effort=medium -o "${TMPDIR:-/tmp}/pcr-<run-id>/uncommitted.md"
+timeout 300 codex exec review --uncommitted -m gpt-6-sol -c model_reasoning_effort=medium -o "${TMPDIR:-/tmp}/pcr-<run-id>/uncommitted.md"
 ```
 
 Pick a `<run-id>` unique to this review — a timestamp will do — create that directory, and use the same literal path when you read the file back. A fixed filename is not safe here: two reviews running at once on the same machine would overwrite each other's findings, and a stale file left by an earlier run defeats the existence check below, since a file being present would no longer be evidence that *this* invocation wrote it.
 
 Read that file for the findings. `-o` writes Codex's final review there, so the merge works from one clean artifact instead of scraping it out of the progress output that also goes to stdout.
 
-`codex exec review` rather than the plain `codex review`: both run non-interactively, but only the `exec` form has `-o`, `--json`, and `-m/--model`, and the last of those is the escape hatch if this pass ever needs a stronger model than the session default.
+`codex exec review` rather than the plain `codex review`: both run non-interactively, but only the `exec` form has `-o`, `--json`, and `-m/--model`. The model is pinned with `-m` rather than left to the default in `~/.codex/config.toml`, so that changing the model for everyday Codex work doesn't silently change the reviewer, and so runs stay comparable.
 
 Codex accepts custom review instructions as a trailing `[PROMPT]` argument, even alongside `--uncommitted`. Don't use it. Its built-in review improves with each Codex release, and a prompt pinned in this file would freeze today's version of that thinking and then quietly rot — the same reason the native pass and the handoff below lean on their own built-ins. `--output-schema` is available and is declined for the same reason: constraining the shape of the final response constrains the review that produces it.
 
