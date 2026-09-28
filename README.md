@@ -5,7 +5,7 @@ Personal skills for [Claude Code](https://claude.com/claude-code). Each subdirec
 ## Skills
 
 ### [pre-commit-review](pre-commit-review/SKILL.md)
-Review before every commit, with depth routed mechanically by what changed. Docs-only changes get the built-in `/code-review` pass alone; touching source adds a Codex pass (a different model, so it fails differently) and a product-owner pass asking whether the change actually serves the end user. A branch ahead of its base also gets a PR-level pass for issues no single commit shows. Passes report everything they find and rank nothing — filtering at the finding stage costs recall — so severity is assigned once, at the merge. Hands findings to `address-review` rather than fixing in place.
+Review before every commit, with depth routed mechanically by what changed. Docs-only changes get the built-in `/code-review` pass alone; touching source adds a Codex pass (a different model, so it fails differently) — with an opt-in Antigravity (`agy`, Gemini) stand-in when Codex fails, which needs a prior interactive `agy` login and costs about half a million tokens per run — and a product-owner pass asking whether the change actually serves the end user. A branch ahead of its base also gets a PR-level pass for issues no single commit shows. Passes report everything they find and rank nothing — filtering at the finding stage costs recall — so severity is assigned once, at the merge. Hands findings to `address-review` rather than fixing in place.
 
 **Triggers:** "review before commit", "quick review", "looks good?", "ship it", or any `git commit`.
 

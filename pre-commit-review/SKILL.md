@@ -28,14 +28,14 @@ Mechanical, so it can't be argued with:
 
 Test the first rule first; the paths are exclusive and the full path wins.
 
-- **Any changed file executes or pins a dependency** → native pass, Codex pass, and product pass. Source files, obviously, but also CI workflow YAML, Dockerfiles, Terraform and other deployment manifests, and lockfiles. These look inert and are not: a widened permission, an unsafe container setting or a compromised transitive dependency is a security finding, and the coverage map below gives security exactly one owner — the Codex pass. The test is the file, never the edit inside it: a comment-only or string-only change to a source file still takes this path. Copy is the case that most needs the product pass, since a reworded error message or empty state is a user-facing change wearing a one-line diff, and routing it as prose would skip the one reviewer looking for exactly that.
+- **Any changed file executes or pins a dependency** → native pass, Codex pass, and product pass, plus the Antigravity pass if the Codex pass fails. Source files, obviously, but also CI workflow YAML, Dockerfiles, Terraform and other deployment manifests, and lockfiles. These look inert and are not: a widened permission, an unsafe container setting or a compromised transitive dependency is a security finding, and the coverage map below gives security exactly one owner — the Codex pass, or Antigravity standing in for it. The test is the file, never the edit inside it: a comment-only or string-only change to a source file still takes this path. Copy is the case that most needs the product pass, since a reworded error message or empty state is a user-facing change wearing a one-line diff, and routing it as prose would skip the one reviewer looking for exactly that.
   The same applies to files the build or the runtime *reads*, even though nothing in them executes: localization catalogs, prompt and template files, feature-flag and other configuration JSON, static UI content, schemas. A flipped flag or a reworded catalog string changes what users get and can change what is permitted, so these belong here rather than with prose.
 - **No changed file does** → native pass alone. Standalone documentation and prose — a README, a changelog, developer notes. The test is whether anything but a human ever reads the file; if the build, the runtime or the deploy does, it took the path above.
 - **The branch is at least one commit ahead of `origin/main` or `origin/master`** → add the PR-level pass. Skip it on the default branch, or when no base ref exists. One commit ahead is the threshold rather than two because the commit you are about to make is the second: this is the first moment a cross-commit defect can exist, and waiting for the branch to already hold two means a two-commit branch that gets pushed never receives a cumulative review at all.
 
 ## The passes
 
-Run them concurrently — issue the calls in one message rather than waiting on each.
+Run them concurrently — issue the calls in one message rather than waiting on each. The Antigravity fallback is the exception: it starts when the Codex pass has failed, so it runs after it — tell the user when it starts, since it can add several minutes before the report.
 
 Each pass reports **everything it finds**, with a confidence and a rough severity attached to each finding, and filters nothing. Coverage is the goal here; ranking happens once, at the merge. A pass told to report only what matters will find a bug and then decline to mention it, which costs real recall — so do not add a bar, and if a pass volunteers one, keep the finding anyway.
 
@@ -57,9 +57,29 @@ Read that file for the findings. `-o` writes Codex's final review there, so the 
 
 Codex accepts custom review instructions as a trailing `[PROMPT]` argument, even alongside `--uncommitted`. Don't use it. Its built-in review improves with each Codex release, and a prompt pinned in this file would freeze today's version of that thinking and then quietly rot — the same reason the native pass and the handoff below lean on their own built-ins. `--output-schema` is available and is declined for the same reason: constraining the shape of the final response constrains the review that produces it.
 
-Two mechanics, both load-bearing. Claude Code's permission system splits on `&&`, `||`, `;` and `|` and matches each piece against an allow rule separately, so wrapping this in `command -v`, piping it to `tail`, or adding `2>&1` turns an allowed command into a permission prompt — `timeout` and the `-o` redirect-to-file introduce no operator and are safe. And the timeout is not decoration: Codex has a known failure where an internal git command exits non-zero, the error is reported, and the turn never ends, leaving the process alive indefinitely. An external watchdog is the only thing that stops it. Treat a timeout kill as a Codex failure, not a clean review — and check the output file exists before reading it, since a killed run may never have written one.
+Two mechanics, both load-bearing. Claude Code's permission system splits on `&&`, `||`, `;` and `|` and matches each piece against an allow rule separately, so wrapping this in `command -v`, piping it to `tail`, or adding `2>&1` turns an allowed command into a permission prompt — `timeout` and the `-o` redirect-to-file introduce no operator and are safe. And the timeout is not decoration: Codex has a known failure where an internal git command exits non-zero, the error is reported, and the turn never ends, leaving the process alive indefinitely. An external watchdog is the only thing that stops it. Treat a timeout kill as a Codex failure, not a clean review — and check the output file exists before reading it, since a killed run may never have written one. The watchdog only works if the Bash tool outlives it: its own default limit is 120 seconds, so run this in the background or pass a tool timeout above 300 seconds.
 
 If Codex isn't installed it fails with a clear error — pass that through verbatim and carry on.
+
+**Antigravity (fallback).** Runs only when the Codex pass above fails — not installed, killed by the timeout, errored, or no output file — so that security, performance and test coverage still get a reviewer from outside the Claude family. It is a fallback rather than a peer on cost alone: a single review reads widely through the repo for context and was measured at 300–560k tokens, which exhausts a standard Antigravity quota within a handful of runs. It covers the per-commit Codex pass only; a failed PR-level pass is reported as not run. Because a Codex failure is often persistent — not installed, out of credits, the hang below — an unattended fallback would spend that quota on every commit until someone noticed. So before starting it, ask the user once with `AskUserQuestion`, naming the Codex failure and the cost (several minutes, roughly half a million tokens); if they decline, report the Codex dimensions as unreviewed.
+
+agy has no review command, so it reviews a diff file you write, with a prompt. Write the selected diff into the same run directory — `git diff --cached > "${TMPDIR:-/tmp}/pcr-<run-id>/selected.diff"`, or `git diff` when the working tree is what's selected. `git diff` omits untracked files, which Codex's `--uncommitted` reviews, so in the working-tree case also append each file `git ls-files --others --exclude-standard` lists with `git diff --no-index /dev/null <file> >> …/selected.diff` (it exits 1 whenever it prints a diff; that is not an error). Then run exactly this from the repo root, unmodified:
+
+```bash
+timeout 600 agy -p "Review the code change in the unified diff at ${TMPDIR:-/tmp}/pcr-<run-id>/selected.diff. Read it, and any repository files you need for context, with your file-reading tool; do not run shell commands. Report every finding with file:line, a confidence and a severity, filtering nothing. Do not edit anything." --model gemini-3.8-flash-high --effort high --mode plan --sandbox --add-dir "${TMPDIR:-/tmp}/pcr-<run-id>" --output-format json --print-timeout 9m < /dev/null > "${TMPDIR:-/tmp}/pcr-<run-id>/agy.json"
+```
+
+The prompt is here only because agy offers no built-in review to lean on, and it is kept to what the skill already demands of every pass — report everything, with confidence and severity — plus the one instruction the mechanics below require. Don't grow it into a checklist, for the same reason the Codex pass takes no prompt.
+
+The mechanics, all load-bearing:
+
+- **Only `status == "SUCCESS"` with a non-empty `response` in `agy.json` counts as a review.** Anything else is an agy failure, whatever the exit code. Observed in practice: when the model reaches for a shell command, headless mode denies it and the run comes back `SUCCESS` with exit 0, an empty `response` and the refusal recorded only in `denied_actions` — a clean-looking review that reviewed nothing. When `response` does hold a review but `denied_actions` is non-empty, keep the review and name the denied actions in the report, since the reviewer may have wanted something it never got. That is also why the prompt forbids shell commands: file reads inside the workspace and `--add-dir` need no permission, commands do, and a headless run cannot ask.
+- **`< /dev/null`** — agy can block waiting on stdin when it isn't attached to a terminal.
+- **`timeout 600`** — measured reviews took 260–390 seconds, and a run stuck on a permission can outlive `--print-timeout`, so the external watchdog is the one that counts. As with Codex, run it in the background or with a Bash tool timeout above 600 seconds, and check the file exists before reading it.
+- **`--mode plan --sandbox`** keep the reviewer read-only. Never add `--dangerously-skip-permissions` to get past a denial; a denial is something to report, never to route around.
+- **The model is pinned** because headless mode fails on an unknown model rather than falling back, and so runs stay comparable. Flash was chosen over `gemini-3.1-pro-high` on published coding benchmarks and one measured Flash review — Pro has not been measured here yet; revisit the pin if it proves stronger.
+
+A quota or authentication failure arrives as `status: "ERROR"` with the reason in `error` — pass it through verbatim and carry on. Headless mode needs a prior interactive `agy` login.
 
 **PR-level.** The same command against the base branch — `--base "$base_branch"` in place of `--uncommitted`, its own `-o` path under the same run directory — using whichever of `origin/main` or `origin/master` exists. Catches what per-commit review structurally cannot: a helper added in one commit and orphaned by a later one, a feature whose tests never landed. Tag these findings `[pr-scope]`, and drop any the Codex pass already caught.
 
@@ -73,11 +93,11 @@ If the spawn fails, note the error in the report and continue.
 
 ## Coverage
 
-Nobody covers everything. Correctness and code quality come from the native and Codex passes; **security, performance and test coverage have only the Codex pass**. So if Codex didn't run, say which dimensions went unreviewed — a clean verdict without it is a narrower claim than one with it, and should read that way.
+Nobody covers everything. Correctness and code quality come from the native and Codex passes; **security, performance and test coverage have only the Codex pass**, with Antigravity standing in when Codex fails. Say which of the two covered them. If neither produced a review, say which dimensions went unreviewed — a clean verdict without them is a narrower claim than one with them, and should read that way.
 
 Findings on lines the diff didn't touch belong in a backlog, not here. The same legacy issues resurfacing on every commit train the reader to skim. Mention one only when the change makes it newly reachable.
 
-That rule is about the per-commit passes — native and Codex — and must not be applied to the PR-level pass, which would gut it. Cross-commit defects are precisely the ones whose actionable line sits in an earlier commit: a helper added two commits ago and orphaned by this one is reported at the helper, which the staged diff never touches. Test PR-level findings against the cumulative diff from the base branch instead. A finding this pass exists to produce is not out of scope for being outside the staged diff.
+That rule is about the per-commit passes — native, Codex and Antigravity — and must not be applied to the PR-level pass, which would gut it. Cross-commit defects are precisely the ones whose actionable line sits in an earlier commit: a helper added two commits ago and orphaned by this one is reported at the helper, which the staged diff never touches. Test PR-level findings against the cumulative diff from the base branch instead. A finding this pass exists to produce is not out of scope for being outside the staged diff.
 
 ## Merging
 
@@ -87,7 +107,7 @@ Two mapping notes. The native pass reports `CONFIRMED` or `PLAUSIBLE` rather tha
 
 Say which pass found what. Where two passes agree independently, say that too — it's the strongest signal in the report. Where they disagree, show both positions and leave it; resolving it silently throws away the disagreement, which is the useful part.
 
-One asymmetry to respect: the Codex passes arrive already filtered by whatever bar Codex applies internally, and this skill deliberately doesn't override it. So Codex finding nothing minor is not evidence there is nothing minor — read its silence on low-severity issues as no information, never as a second vote for clean.
+One asymmetry to respect: the Codex passes arrive already filtered by whatever bar Codex applies internally, and this skill deliberately doesn't override it. So Codex finding nothing minor is not evidence there is nothing minor — read its silence on low-severity issues as no information, never as a second vote for clean. Antigravity findings, when it stood in, arrive unfiltered with their own confidence and severity; rank them like any other pass's.
 
 ## What happens next
 
