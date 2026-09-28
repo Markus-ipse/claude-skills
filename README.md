@@ -9,11 +9,6 @@ Review before every commit, with depth routed mechanically by what changed. Docs
 
 **Triggers:** "review before commit", "quick review", "looks good?", "ship it", or any `git commit`.
 
-### [fix-pr-comments](fix-pr-comments/SKILL.md)
-Analyze PR review feedback, classify comments by category (action required, bug, security, question, suggestion, style, praise), prioritize P1–P4, apply fixes, commit, push, and reply to reviewers.
-
-**Triggers:** "review PR comments", "fix PR feedback", "address review feedback".
-
 ### [plan-review](plan-review/SKILL.md)
 Audit a plan against project conventions, current library/framework best practices (via the ref MCP when available), and software-engineering principles before implementation. Catches shortcuts, quick fixes, hardcoded values, ignored conventions, premature abstractions, and missing root-cause analysis, then asks for explicit confirmation.
 
@@ -29,15 +24,20 @@ Write a compact (~80-line) brief to `~/.claude/handoffs/<repo>/<slug>.md` (a pri
 
 **Triggers:** manual only — `/handoff`, `/handoff resume [slug]`, `/handoff list`.
 
+### [ship](ship/SKILL.md)
+End-to-end shipping flow: checks, pre-commit review with fixes, visual verification, feature branch and PR, then CI and PR review comments through to green — never merges — and a `/handoff` brief.
+
+**Triggers:** manual only — `/ship` or by name.
+
 ## Layout
 
 ```
 skills/
 ├── pre-commit-review/SKILL.md
-├── fix-pr-comments/SKILL.md
 ├── plan-review/SKILL.md
 ├── address-review/SKILL.md
-└── handoff/SKILL.md
+├── handoff/SKILL.md
+└── ship/SKILL.md
 ```
 
 Each `SKILL.md` begins with frontmatter (`name`, `description`, optional `allowed-tools`) that Claude Code uses to decide when to invoke the skill.
