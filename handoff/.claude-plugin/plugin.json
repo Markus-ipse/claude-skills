@@ -1,0 +1,29 @@
+{
+  "name": "handoff",
+  "version": "0.1.0",
+  "description": "Keeps the /handoff brief live: commits each edit, nudges when it goes stale, before the context fills and before the prompt cache expires, and carries it through compaction.",
+  "author": {
+    "name": "Markus-ipse"
+  },
+  "defaultEnabled": true,
+  "userConfig": {
+    "staleMinutes": {
+      "type": "number",
+      "title": "Stale after (minutes)",
+      "description": "Nudge at the end of a turn when the brief is older than this and the repo has moved since.",
+      "default": 20
+    },
+    "contextPercent": {
+      "type": "number",
+      "title": "Context threshold (%)",
+      "description": "Ask for a brief update when the context window passes this fill, and every 15 points after.",
+      "default": 60
+    },
+    "idleMinutes": {
+      "type": "number",
+      "title": "Idle before update (minutes)",
+      "description": "Ask for a brief update after this long idle, while the prompt cache is still warm. 0 turns it off.",
+      "default": 50
+    }
+  }
+}

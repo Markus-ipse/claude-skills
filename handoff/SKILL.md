@@ -2,31 +2,6 @@
 name: handoff
 description: Write a compact handoff brief so a fresh session can continue this work without the bloated context, keep it updated live as work progresses, or resume from one. Use on `/handoff`, `/handoff start`, "write a handoff", "hand this off", or `/handoff resume` / "pick up where we left off". Manual only.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
-hooks:
-  PostToolUse:
-    - matcher: "Write|Edit"
-      hooks:
-        - type: command
-          command: 'f="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/handoff}/scripts/live.py"; test -f "$f" && python3 "$f" bind; exit 0'
-    - matcher: "Bash"
-      hooks:
-        - type: command
-          if: "Bash(git commit *)"
-          command: 'f="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/handoff}/scripts/live.py"; test -f "$f" && python3 "$f" commit; exit 0'
-  Stop:
-    - hooks:
-        - type: command
-          command: 'f="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/handoff}/scripts/live.py"; test -f "$f" && python3 "$f" stop; exit 0'
-  SessionStart:
-    - matcher: "compact"
-      hooks:
-        - type: command
-          command: 'f="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/handoff}/scripts/live.py"; test -f "$f" && python3 "$f" compact; exit 0'
-  SessionEnd:
-    - hooks:
-        - type: command
-          command: 'f="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/handoff}/scripts/live.py"; test -f "$f" && python3 "$f" end; exit 0'
-          timeout: 30
 ---
 
 # handoff
@@ -37,11 +12,11 @@ Modes from the argument: `/handoff start [slug]` opens a live brief at the start
 
 A brief written only at the end is written from the most bloated, often already compacted context, and not at all if the session crashes or the user forgets. So the brief is live: once this session has written or resumed one, keep it current as the work moves (see Live updates), and the end-of-session `/handoff` becomes a short review.
 
-Briefs live at `~/.claude/handoffs/<repo>/<slug>.md`, outside the code repo so they never touch its git status or PRs. That directory is itself a private git repo (`Markus-ipse/claude-handoffs`) synced between the user's machines: pull it (`git pull --rebase`) before reading a brief, and push after Start and Write; the live hooks commit each edit locally (see Live updates). `<repo>` is the basename of `git rev-parse --show-toplevel`; `<slug>` is a kebab-case work-stream name, usually from the branch. One file per work stream, updated in place; history goes in `Lineage`. Work spanning several repos gets one brief under the repo the session started in.
+Briefs live at `~/.claude/handoffs/<repo>/<slug>.md`, outside the code repo so they never touch its git status or PRs. That directory is itself a private git repo (`Markus-ipse/claude-handoffs`) synced between the user's machines: pull it (`git pull --rebase`) before reading a brief, and push after Start and Write; the skill's mod commits each live edit locally (see Live updates). `<repo>` is the basename of `git rev-parse --show-toplevel`; `<slug>` is a kebab-case work-stream name, usually from the branch. One file per work stream, updated in place; history goes in `Lineage`. Work spanning several repos gets one brief under the repo the session started in.
 
 ## Start
 
-For work that will run long, unattended, or across a pause. Gather state as for Write (skip the WIP-push offer), then write the brief with what is known now: Goal, State, Next steps, Quick start, and a Lineage line `<date> — in progress — <session URL>`; leave the other sections as `None yet`. Commit (the `bind` hook normally already has) and push the handoffs repo once so the slug is claimed on the other machine. Reply with the path in one line and carry on with the work: unlike Write, this does not end the session.
+For work that will run long, unattended, or across a pause. Gather state as for Write (skip the WIP-push offer), then write the brief with what is known now: Goal, State, Next steps, Quick start, and a Lineage line `<date> — in progress — <session URL>`; leave the other sections as `None yet`. Commit (the mod normally already has) and push the handoffs repo once so the slug is claimed on the other machine. Reply with the path in one line and carry on with the work: unlike Write, this does not end the session.
 
 ## Live updates
 
@@ -53,14 +28,19 @@ Update the brief when something it says stops being true, at these points:
 - when a decision is made or the user rules something out: Decisions;
 - before a long-running or unattended step, or when the user says they are stepping away.
 
-Use small `Edit`s on the lines that changed and bump `Updated`; never rewrite the whole file, and keep it under 80 lines. The `bind` hook commits each edit to the handoffs repo locally; don't commit or push it yourself on these updates. `/handoff` pushes, and the SessionEnd hook pushes whatever is still unpushed.
+Use small `Edit`s on the lines that changed and bump `Updated`; never rewrite the whole file, and keep it under 80 lines. The skill's mod (below) commits each edit to the handoffs repo locally and pushes a minute after the last one; don't commit or push it yourself on these updates.
 
-The skill's hooks keep this honest. They are registered when `/handoff` runs in any mode, and do nothing until this session has written a brief:
-- after `git commit`, a reminder to update the brief;
-- when a turn ends with the brief older than 20 minutes (`HANDOFF_LIVE_STALE_MIN`) and the repo changed since, one nudge to bring it up to date, not repeated until the brief changes. If nothing is out of date, say so in one line and stop;
-- after compaction, the brief is re-injected; trust it over the compacted summary;
-- when the session ends, an uncommitted brief is committed and pushed;
-- if another session on this machine wrote the same brief in the last 6 hours, a warning. It may be a session that has since crashed, so ask the user; if both are running, continue in `<slug>-2.md`, created with `Write` so the hooks follow it.
+The skill folder is also a mod (`hooks/register.ts`, loaded as `handoff@skills-dir` in CLI and Desktop sessions) that keeps this honest. It does nothing until this session has written a brief; then:
+- each edit to the brief is committed locally and pushed a minute after the last one; edits from a session's last minute go out with the next sync from any session, or with `/handoff`;
+- after a `git commit` in the code repo, a reminder to update the brief;
+- when a turn ends with the brief older than 20 minutes and the repo changed since, one request to bring it up to date, not repeated until the brief changes;
+- when the context window passes 60%, and every 15 points after, a request to update the brief while the context is still cached;
+- after 50 minutes idle, before the prompt cache expires, one request to update the brief so the next session never has to wake this one. This assumes the 1-hour cache; on the 5-minute cache set `idleMinutes` to 4;
+- on compaction, the summarizer is told about the brief, and the brief is handed back afterwards: where it and the summary disagree, trust the brief;
+- if another session on this machine was live on the same brief in the last 6 hours, a warning. It may be a session that has since crashed, so ask the user; if both are running, continue in `<slug>-2.md`, created with `Write` so the mod follows it;
+- the status line shows the brief's age.
+
+Requests arrive as messages from the handoff plugin. Answer them with small `Edit`s; if nothing in the brief is out of date, say so in one line. The thresholds are the plugin's options (`/plugin configure handoff@skills-dir`).
 
 ## Write
 

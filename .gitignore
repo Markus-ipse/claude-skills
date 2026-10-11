@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 synced/
 weekly-delivery-report/
+
+# Types Claude Code writes beside a loaded mod
+*/.claude-plugin/types/
