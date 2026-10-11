@@ -20,9 +20,11 @@ Triage a just-produced review (code or plan): auto-apply clear-win fixes, walk g
 **Triggers:** `/address-review`, "address the review", or a handoff from `pre-commit-review`. Does not auto-invoke after other review skills.
 
 ### [handoff](handoff/SKILL.md)
-Write a compact (~80-line) brief to `~/.claude/handoffs/<repo>/<slug>.md` (a private git repo synced across machines) — goal, state, decisions, dead ends, verification, ordered next steps — so the user can `/clear` and continue in a fresh session. `resume` reloads a brief, runs a git/PR staleness check, and starts on the first next step; `list` shows briefs for the current repo.
+Write a compact (~80-line) brief to `~/.claude/handoffs/<repo>/<slug>.md` (a private git repo synced across machines) — goal, state, decisions, dead ends, verification, ordered next steps — so the user can `/clear` and continue in a fresh session. `start` opens the brief at the beginning of the work; once a session has written or resumed a brief it is kept live, edited in place after commits, dead ends and decisions, so the end-of-session `/handoff` is a short finalize pass and a crash or forgotten handoff loses little. Hooks in the skill's frontmatter (`scripts/live.py`, registered once `/handoff` runs) remind after commits, nudge once when the brief is stale, re-inject it after compaction, commit each edit locally and push at session end, and warn when two sessions write the same brief. `resume` reloads a brief, runs a git/PR staleness check, and starts on the first next step; `list` shows briefs for the current repo.
 
-**Triggers:** manual only — `/handoff`, `/handoff resume [slug]`, `/handoff list`.
+The hooks find the script via `${CLAUDE_SKILL_DIR}`, falling back to `~/.claude/skills/handoff`; install the skill there (or symlink it) for the hooks to run. They need `python3`.
+
+**Triggers:** manual only — `/handoff start [slug]`, `/handoff`, `/handoff resume [slug]`, `/handoff list`.
 
 ### [ship](ship/SKILL.md)
 End-to-end shipping flow: checks, pre-commit review with fixes, visual verification, feature branch and PR, then CI and PR review comments through to green — never merges — and a `/handoff` brief.
@@ -36,7 +38,7 @@ skills/
 ├── pre-commit-review/SKILL.md
 ├── plan-review/SKILL.md
 ├── address-review/SKILL.md
-├── handoff/SKILL.md
+├── handoff/SKILL.md, scripts/live.py
 └── ship/SKILL.md
 ```
 
