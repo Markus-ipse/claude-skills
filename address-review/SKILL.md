@@ -1,6 +1,6 @@
 ---
 name: address-review
-description: Triage a just-produced review (code or plan) — auto-applies clear-win fixes, then walks the rest one at a time with recommended actions and trade-offs. Use on explicit `/address-review` or "address the review", and when pre-commit-review hands off its findings — do not auto-trigger after other review skills.
+description: Triage a just-produced review (code or plan) — auto-applies clear-win fixes, then walks the rest one at a time with recommended actions and trade-offs. Use on explicit `/address-review` or "address the review" — do not auto-trigger after review skills.
 allowed-tools: Bash, Read, Grep, Glob, Edit, AskUserQuestion
 ---
 
@@ -12,7 +12,7 @@ Close the gap between a review's findings and the actual fixes. Do the obvious w
 
 ## When to run
 
-On explicit request, or on handoff from pre-commit-review. The skill never runs reviews itself — it works on the most recent reviewer output already in the conversation. If none is in scope, ask the user to point at one. If there are multiple plausible candidates, ask which.
+On explicit request. The skill never runs reviews itself — it works on the most recent reviewer output already in the conversation. If none is in scope, ask the user to point at one. If there are multiple plausible candidates, ask which.
 
 ## Rules of engagement
 
@@ -46,5 +46,5 @@ Auto-fixed:      <n>   • path/file.ts:42 — <what>  • …
 Decided:         <n>   • path/file.ts:17 — <choice>  • …
 Postponed:       <n>   • path/file.ts:120 — <major-refactor reason>  • …
 
-Next: re-run the originating review (`/pre-commit-review` or `/plan-review`) to confirm clean state.
+Next: re-run the originating review (`/code-review`, `/pr-review` or `/plan-review`) to confirm clean state.
 ```
