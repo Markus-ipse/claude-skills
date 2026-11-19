@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: Write a compact handoff brief so a fresh session can continue this work without the bloated context, or resume from one. Use on `/handoff`, "write a handoff", "hand this off", or `/handoff resume` / "pick up where we left off". Manual only.
+description: Write a compact handoff brief so a fresh session can continue unfinished work without the bloated context, or resume from one. Writes nothing, and closes the stream's brief, when no work is left to continue. Use on `/handoff`, "write a handoff", "hand this off", or `/handoff resume` / "pick up where we left off". Manual only.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 
@@ -11,6 +11,18 @@ A long session accumulates dead ends, resolved errors and file dumps, and every 
 Modes from the argument: `/handoff [slug]` writes, `/handoff resume [slug]` resumes, `/handoff list` lists.
 
 Briefs live at `~/.claude/handoffs/<repo>/<slug>.md`, outside the code repo so they never touch its git status or PRs. That directory is itself a private git repo (`Markus-ipse/claude-handoffs`) synced between the user's machines: pull it before reading a brief, commit and push after writing one. `<repo>` is the basename of `git rev-parse --show-toplevel`; `<slug>` is a kebab-case work-stream name, usually from the branch. One file per work stream, updated in place; history goes in `Lineage`. Work spanning several repos gets one brief under the repo the session started in.
+
+## When to write one
+
+A brief exists to carry unfinished work to a later session. Write one only when that session has to continue something no other record holds: uncommitted or unmerged work, a plan that is half carried out, or a dead end the next session would otherwise repeat.
+
+Before writing, give every leftover its proper home:
+
+- Planned work becomes an issue, when the repo tracks work in GitHub issues. So does a decision that waits for the user, as an issue or a comment on one.
+- Where the work stands goes on its issue as a dated comment. If work stops without a merge, keep or drop the claim by the repo's own rules.
+- A fact that outlives the task becomes a memory.
+
+If nothing is left after that, write no brief. When this work stream already has one, delete the file, then commit and push the handoffs repo; its git history keeps the text. Say in one line that there is nothing to hand off and where the leftovers went, and stop. A brief whose first next step is "nothing is in flight" should not exist.
 
 ## Write
 
@@ -27,6 +39,7 @@ Template:
 - **Repos / branches:** `<repo>` @ `<branch>`
 - **Machine:** `$(hostname)`
 - **PR(s):** <url or none>
+- **Issues / epic:** <`<repo>#<n>` for each issue this session owns, or none>
 - **Session:** <claude.ai session URL from the attribution reminder>
 
 ## Goal
@@ -46,10 +59,10 @@ Template:
 - NOT tested: <be explicit>
 
 ## Next steps
-1. <concrete, ordered, with file paths; step 1 must be startable with zero further investigation>
+1. <concrete, ordered, with file paths; step 1 must be startable with zero further investigation. Only the thread of this session: work that has an issue is named as `<repo>#<n>`, not described again, and work that is planned but not started is an issue, not a step here>
 
 ## Open questions / blockers
-<decisions only the user can make; external waits>
+<decisions and external waits that block the next steps above; any other open decision belongs in an issue>
 
 ## Quick start
 <the 2–5 commands to be productive; start with `git fetch && git checkout <branch>` so it works from a clean checkout on another machine>
@@ -66,11 +79,11 @@ Commit and push the handoffs repo. Then reply with the file path, a 3–5 line s
 
 `git pull` the handoffs repo, then read the named brief, or the most recently modified one for this repo (if several, list them and ask). Read nothing else yet.
 
-The user rebases and merges between sessions, so check for drift before trusting the brief: `git fetch`, current branch and status, commits since the Updated timestamp, whether the remote is ahead, and the PR state if one is named. If nothing moved, proceed. If things moved but the plan still holds, say what changed in a few lines, adjust the next steps, and proceed. If the plan is invalidated (branch gone, PR merged when the brief expects it open, files in the next steps no longer exist), report and stop.
+The user rebases and merges between sessions, so check for drift before trusting the brief: `git fetch`, current branch and status, commits since the Updated timestamp, whether the remote is ahead, the PR state if one is named, and each named issue (closed, assigned to someone else, or moved to another column). If nothing moved, proceed. If things moved but the plan still holds, say what changed in a few lines, adjust the next steps, and proceed. If the plan is invalidated (branch gone, PR merged when the brief expects it open, an issue closed or taken by someone else, files in the next steps no longer exist), report and stop.
 
 Brief the user in a few lines (goal, state, drift verdict, the step you're starting) and start. Read files as each step needs them, not all up front.
 
-When the resumed session ends, write the brief again under the same slug and add a Lineage line.
+When the resumed session ends, apply "When to write one" again: write the brief under the same slug with a new Lineage line if work is left, or delete it if the stream is finished.
 
 ## List
 
