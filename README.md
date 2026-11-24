@@ -17,7 +17,7 @@ Write a compact (~80-line) brief to `~/.claude/handoffs/<repo>/<slug>.md` (a pri
 ### [ship-full](ship-full/SKILL.md)
 End-to-end shipping flow: checks, feature branch, the repo's `/pr-review` with fixes, visual verification, PR, then CI and PR review comments through to green — never merges — and a `/handoff` brief.
 
-**Triggers:** manual only — `/ship-full` or by name. Named `ship-full` because Claude Code 2.1.330+ has a built-in `/ship` (commit, PR, review, then watch the PR until merged).
+**Triggers:** manual only — `/ship-full` or by name. Named `ship-full` because Claude Code 2.1.330+ has a built-in `/ship` (commit, PR, review, then watch the PR until it is merged or closed; it never merges).
 
 ## Layout
 
